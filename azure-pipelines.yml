@@ -1,19 +1,49 @@
-# Starter pipeline
-# Start with a minimal pipeline that you can customize to build and deploy your code.
-# Add steps that build, run tests, deploy, and more:
-# https://aka.ms/yaml
-
 trigger:
-- master
+  branches:
+    include:
+    - '*'
+  paths:
+    include:
+    - '*'
+
+variables:
+- group: Edaena Container Journey
 
 pool:
   vmImage: 'ubuntu-latest'
 
 steps:
-- script: echo Hello, world!
-  displayName: 'Run a one-line script'
+- checkout: self
+  persistCredentials: true
+  clean: true
 
-- script: |
-    echo Add other tasks to build, test, and deploy your project.
-    echo See https://aka.ms/yaml
-  displayName: 'Run a multi-line script'
+- bash: |
+    echo "secret1 = $(secret1)"
+    echo "secret2 = $(secret2)"
+    echo "SourceBranchName = $(Build.SourceBranchName)"
+    echo "SourceBranch = $(Build.SourceBranch)"
+    branch_name_extracted=$(echo "${SourceBranch/refs\/head\// }")
+  displayName: Extract branch name
+
+- bash: |
+    curl $SCRIPT > script.sh
+    chmod +x ./script.sh
+    tag_name="hello-spektate-$(Build.SourceBranchName)-$(Build.BuildId)"
+    commitId=$(Build.SourceVersion)
+    commitId=$(echo "${commitId:0:7}")
+    echo "./script.sh $(ACCOUNT_NAME) $(ACCOUNT_KEY) $(TABLE_NAME) $(PARTITION_KEY) p1 $(Build.BuildId) imageTag $tag_name commitId $commitId service $(Build.Repository.Name)"
+    ./script.sh $(ACCOUNT_NAME) $(ACCOUNT_KEY) $(TABLE_NAME) $(PARTITION_KEY) p1 $(Build.BuildId) imageTag $tag_name commitId $commitId service $(Build.Repository.Name)
+  displayName: Update manifest pipeline details in CJ db
+  env:
+    SCRIPT: https://raw.githubusercontent.com/samiyaakhtar/spk/686-simply-pipelines/scripts/update_introspection.sh
+
+
+
+- task: Docker@2
+  inputs:
+    containerRegistry: 'hellorings_acr'
+    repository: 'ehellospektate'
+    command: 'buildAndPush'
+    Dockerfile: '**/src/Dockerfile'
+    tags: 'hello-spektate-$(Build.SourceBranchName)-$(Build.BuildId)'
+  condition: ne(variables['Build.Reason'], 'PullRequest')
